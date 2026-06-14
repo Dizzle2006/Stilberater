@@ -1,0 +1,23 @@
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.db
+
+# Node
+node_modules/
+frontend/dist/
+
+# macOS
+.DS_Store
+
+# Uploads (lokale Kleidungsfotos — werden auf Render separat gespeichert)
+backend/uploads/
+
+# Sonstige temporäre Ordner
+{backend/

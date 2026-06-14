@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Stilberater</title>
+    <script>
+      // GitHub Pages SPA fallback.
+      // Stores the intended path in sessionStorage, then redirects to the app root.
+      // The app root reads the stored path and restores it via history.replaceState.
+      var l = window.location;
+      // Derive the base path: everything up to (and including) the first sub-path segment
+      // e.g. https://user.github.io/Stilberater/foo/bar → base = /Stilberater/
+      var segments = l.pathname.split('/');
+      var base = segments.slice(0, 2).join('/') + '/';
+      // Store only the part after the base so React Router can match it
+      var route = l.pathname.slice(base.length - 1) || '/';
+      sessionStorage.setItem('spa-redirect', route + l.search + l.hash);
+      l.replace(l.origin + base);
+    </script>
+  </head>
+  <body></body>
+</html>
