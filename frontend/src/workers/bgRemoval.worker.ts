@@ -17,8 +17,8 @@ self.onmessage = async (e: MessageEvent) => {
 
   if (type === 'remove') {
     try {
-      const blob = new Blob([buffer], { type: mimeType ?? 'image/png' })
-      const result = await _remove(blob as any, {
+      const original = new Blob([buffer], { type: mimeType ?? 'image/png' })
+      const result = await _remove(original as any, {
         ...BG_CONFIG,
         progress: (_key: string, current: number, total: number) => {
           if (total > 0) {
@@ -26,8 +26,12 @@ self.onmessage = async (e: MessageEvent) => {
           }
         },
       })
-      const cleaned = await cleanAlphaMatte(result)
-      const resized = await resizePng(cleaned, 900)
+      const { blob: cleaned, opaqueRatio } = await cleanAlphaMatte(result)
+      // Hat das Modell fast das gesamte Bild als Hintergrund erkannt (z. B. dunkle
+      // Jeans vor dunklem Hintergrund), bleibt nichts vom Kleidungsstück übrig —
+      // dann lieber das Originalfoto ohne Freistellung verwenden.
+      const finalBlob = opaqueRatio < 0.05 ? original : cleaned
+      const resized = await resizePng(finalBlob, 900)
       const out = await resized.arrayBuffer()
       self.postMessage({ id, type: 'done', buffer: out }, [out])
     } catch (err: any) {
@@ -38,7 +42,9 @@ self.onmessage = async (e: MessageEvent) => {
 
 // Removes stray background pixels (alpha < 15) and solidifies near-opaque
 // clothing pixels (alpha > 220) to reduce the "halo" and transparency artefacts.
-async function cleanAlphaMatte(blob: Blob): Promise<Blob> {
+// Also reports the share of non-transparent pixels so the caller can detect a
+// failed segmentation (model removed the garment instead of the background).
+async function cleanAlphaMatte(blob: Blob): Promise<{ blob: Blob; opaqueRatio: number }> {
   const bitmap = await createImageBitmap(blob)
   const { width, height } = bitmap
   const canvas = new OffscreenCanvas(width, height)
@@ -47,6 +53,8 @@ async function cleanAlphaMatte(blob: Blob): Promise<Blob> {
   const imageData = ctx.getImageData(0, 0, width, height)
   const data = imageData.data
 
+  let opaque = 0
+  const totalPixels = data.length / 4
   for (let i = 3; i < data.length; i += 4) {
     const a = data[i]
     if (a < 15) {
@@ -55,14 +63,18 @@ async function cleanAlphaMatte(blob: Blob): Promise<Blob> {
       data[i - 3] = 0
       data[i - 2] = 0
       data[i - 1] = 0
-    } else if (a > 220) {
-      // Near-opaque: make fully solid to fix semi-transparent clothing artefacts
-      data[i] = 255
+    } else {
+      opaque++
+      if (a > 220) {
+        // Near-opaque: make fully solid to fix semi-transparent clothing artefacts
+        data[i] = 255
+      }
     }
   }
 
   ctx.putImageData(imageData, 0, 0)
-  return canvas.convertToBlob({ type: 'image/png' })
+  const out = await canvas.convertToBlob({ type: 'image/png' })
+  return { blob: out, opaqueRatio: opaque / totalPixels }
 }
 
 async function resizePng(blob: Blob, maxPx: number): Promise<Blob> {

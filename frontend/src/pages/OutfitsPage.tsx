@@ -114,7 +114,7 @@ const TOP_OPTIONS = [
 const BOTTOM_OPTIONS = [
   { key: '',            label: 'Alle Hosen'        },
   { key: 'chino',       label: 'Chino'             },
-  { key: 'jeans_dunkel',label: 'Selvedge-Jeans'    },
+  { key: 'jeans_dunkel',label: 'Jeanshose'         },
   { key: 'anzughose',   label: 'Anzughose'         },
   { key: 'flanellhose', label: 'Flanellhose'       },
   { key: 'cord_hose',   label: 'Cordhose'          },
