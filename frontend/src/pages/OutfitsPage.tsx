@@ -298,6 +298,13 @@ export default function OutfitsPage() {
   const handleOutfitUpdated = (updated: any) =>
     setOutfits(prev => prev.map(o => o.id === updated.id ? { ...o, ...updated } : o))
 
+  // Negatives Feedback: das Outfit an gleicher Stelle durch den neu generierten
+  // Vorschlag ersetzen — oder entfernen, falls die Engine keinen mehr findet.
+  const handleOutfitReplaced = (oldId: number, replacement: any | null) =>
+    setOutfits(prev => replacement
+      ? prev.map(o => o.id === oldId ? replacement : o)
+      : prev.filter(o => o.id !== oldId))
+
   const handleOutfitCreated = (outfit: any) => {
     setOutfits(prev => [outfit, ...prev])
     setShowCreator(false)
@@ -871,6 +878,7 @@ export default function OutfitsPage() {
                         items={items}
                         onDeleted={handleOutfitDeleted}
                         onUpdated={handleOutfitUpdated}
+                        onReplaced={handleOutfitReplaced}
                         rainActive={!!(weather as any)?.rain_priority}
                       />
                     ))}
@@ -1061,6 +1069,7 @@ export default function OutfitsPage() {
                 items={items}
                 onDeleted={handleOutfitDeleted}
                 onUpdated={handleOutfitUpdated}
+                onReplaced={handleOutfitReplaced}
                 rainActive={!!(weather as any)?.rain_priority}
               />
             ))}

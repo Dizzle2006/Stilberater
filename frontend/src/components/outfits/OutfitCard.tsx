@@ -62,11 +62,13 @@ interface Props {
   items: Item[]
   onDeleted?: (id: number) => void
   onUpdated?: (updated: Outfit) => void
+  /** Negatives Feedback: Outfit wird durch einen neu generierten Vorschlag ersetzt (oder entfernt, falls keiner möglich ist) */
+  onReplaced?: (oldId: number, replacement: Outfit | null) => void
   /** Gap 9: Regen aktiv → wetterfeste Items hervorheben */
   rainActive?: boolean
 }
 
-export default function OutfitCard({ outfit, items, onDeleted, onUpdated, rainActive = false }: Props) {
+export default function OutfitCard({ outfit, items, onDeleted, onUpdated, onReplaced, rainActive = false }: Props) {
   const [fav, setFav]                   = useState(outfit.is_favourite)
   const [editing, setEditing]           = useState(false)
   const [showMenu, setShowMenu]         = useState(false)
@@ -121,25 +123,29 @@ export default function OutfitCard({ outfit, items, onDeleted, onUpdated, rainAc
     toast.success(next ? 'Favorit gespeichert ✦' : 'Aus Favoriten entfernt')
   }
 
+  // Negatives Feedback: Profil lernt sofort daraus, Outfit wird gelöscht und
+  // durch einen neuen Vorschlag ersetzt, der die gelernten Präferenzen nutzt.
   const handleDislike = async (reason?: FeedbackReason) => {
     setShowFeedbackSheet(false)
-    // Gap 2: Feedback-Reason mit Kontext persistieren
+    const outfitColors  = outfitItems.map(i => i.color_primary).filter(Boolean)
+    const outfitSubcats = outfitItems.map(i => i.subcategory).filter(Boolean) as string[]
+
+    const { outfit: replacement } = await api.replaceOutfit(outfit.id, reason, {
+      outfitOccasion: outfit.occasion,
+      outfitColors,
+      outfitStyles: outfit.active_styles ?? [],
+      outfitSubcats,
+    }).catch(() => ({ outfit: null as Outfit | null }))
+
     if (reason) {
-      const outfitColors = outfitItems.map(i => i.color_primary).filter(Boolean)
-      await api.processFeedbackForOutfit(
-        outfit.id,
-        reason,
-        {
-          outfitOccasion: outfit.occasion,
-          outfitColors,
-          outfitStyles: outfit.active_styles ?? [],
-        }
-      ).catch(() => {})
-      toast.success(`Feedback (${FEEDBACK_REASONS.find(r => r.key === reason)?.label}) gespeichert`)
+      toast.success(replacement
+        ? `Feedback (${FEEDBACK_REASONS.find(r => r.key === reason)?.label}) gespeichert — neues Outfit geladen`
+        : `Feedback (${FEEDBACK_REASONS.find(r => r.key === reason)?.label}) gespeichert`)
     } else {
-      await api.outfitFeedback(outfit.id, { dislike: true } as any).catch(() => {})
-      toast.success('Feedback gespeichert')
+      toast.success(replacement ? 'Outfit ersetzt' : 'Outfit gelöscht')
     }
+    onReplaced?.(outfit.id, replacement)
+
     // Exponentielle Lernrate — Interaktionszähler
     api.getProfile().then(profile => {
       const interactionCount = ((profile as any)?.interaction_count ?? 0) + 1

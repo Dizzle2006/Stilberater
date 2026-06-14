@@ -65,14 +65,29 @@ export async function computePersonalAdjustments(): Promise<PersonalAdjustments>
     const profiles = await db.profile.toArray()
     const profile = profiles[0]
     for (const fb of (profile?.feedback_history ?? [])) {
-      if (fb.reason !== 'wrong_color' || !fb.outfitColors?.length) continue
-      sampleSize++
-      const colors = [...new Set(fb.outfitColors.map(c => c.toLowerCase()))]
-      for (let a = 0; a < colors.length; a++)
-        for (let b = a + 1; b < colors.length; b++) {
-          const k = pairKey(colors[a], colors[b])
-          colorPairDelta[k] = clamp((colorPairDelta[k] ?? 0) - NEGATIVE_STEP)
-        }
+      // Farb-Paare nur bei explizitem "falsche Farbe"-Feedback abwerten
+      if (fb.reason === 'wrong_color' && fb.outfitColors?.length) {
+        sampleSize++
+        const colors = [...new Set(fb.outfitColors.map(c => c.toLowerCase()))]
+        for (let a = 0; a < colors.length; a++)
+          for (let b = a + 1; b < colors.length; b++) {
+            const k = pairKey(colors[a], colors[b])
+            colorPairDelta[k] = clamp((colorPairDelta[k] ?? 0) - NEGATIVE_STEP)
+          }
+      }
+
+      // Jedes Feedback (unabhängig vom Grund) senkt die Affinität der
+      // abgelehnten Subkategorie-Kombination — je mehr Feedback, desto
+      // gezielter meidet die Engine ungeliebte Kombinationen.
+      if (fb.outfitSubcats?.length) {
+        sampleSize++
+        const subcats = [...new Set(fb.outfitSubcats.map(s => s.toLowerCase()))]
+        for (let a = 0; a < subcats.length; a++)
+          for (let b = a + 1; b < subcats.length; b++) {
+            const k = pairKey(subcats[a], subcats[b])
+            subcatPairDelta[k] = clamp((subcatPairDelta[k] ?? 0) - NEGATIVE_STEP)
+          }
+      }
     }
   } catch {
     // DB nicht verfügbar (z.B. SSR/Test) → neutrale Anpassungen

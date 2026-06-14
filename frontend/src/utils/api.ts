@@ -478,7 +478,7 @@ async function runWeeklyRebalancing() {
 async function processFeedbackForOutfit(
   outfitId: number,
   reason: FeedbackReason,
-  context: { outfitOccasion?: string; outfitColors?: string[]; outfitStyles?: string[] },
+  context: { outfitOccasion?: string; outfitColors?: string[]; outfitStyles?: string[]; outfitSubcats?: string[] },
 ) {
   const profile = await getOrCreateProfile()
   const payload: FeedbackPayload = { reason, ...context }
@@ -487,6 +487,80 @@ async function processFeedbackForOutfit(
   // Outfit als disliked markieren
   await db.outfits.update(outfitId, { is_favourite: false })
   return { ok: true }
+}
+
+// Negatives Feedback ersetzt das Outfit sofort: Lernsignal wird ins Profil
+// übernommen, das Outfit gelöscht und durch einen neuen Vorschlag ersetzt,
+// der die frisch gelernten Präferenzen bereits berücksichtigt.
+async function replaceOutfit(
+  outfitId: number,
+  reason?: FeedbackReason,
+  context?: { outfitOccasion?: string; outfitColors?: string[]; outfitStyles?: string[]; outfitSubcats?: string[] },
+) {
+  const outfit = await db.outfits.get(outfitId)
+  if (!outfit) throw new Error('Outfit not found')
+
+  let profile = await getOrCreateProfile()
+
+  if (reason) {
+    const updates = processFeedback(profile, { reason, ...context })
+    await db.profile.update(profile.id!, { ...updates, updated_at: new Date().toISOString() })
+    profile = (await db.profile.get(profile.id!))! as UserProfile & { id: number }
+  }
+
+  // Items/Outfit als "nicht gemocht" markieren
+  const dislikedItems = [...(profile.disliked_item_ids ?? [])]
+  for (const iid of (outfit.item_ids ?? [])) if (!dislikedItems.includes(iid)) dislikedItems.push(iid)
+  const dislikedOutfits = [...(profile.disliked_outfit_ids ?? [])]
+  if (!dislikedOutfits.includes(outfitId)) dislikedOutfits.push(outfitId)
+  await db.profile.update(profile.id!, { disliked_item_ids: dislikedItems, disliked_outfit_ids: dislikedOutfits })
+  profile = (await db.profile.get(profile.id!))! as UserProfile & { id: number }
+
+  const items = await db.clothing_items.filter(i => i.is_active === true).toArray()
+  const rules = interpretProfile(profile)
+  const personalAdj = await computePersonalAdjustments()
+
+  // Kürzlich getragene + die gerade abgelehnte Kombi meiden
+  const rejectedSignature = [...(outfit.item_ids ?? [])].sort().join(',')
+  const fourteenDaysAgo = Date.now() - 14 * 86400000
+  const recentlyWorn = await db.outfits
+    .filter(o => {
+      const lastWorn = o.worn_dates?.length ? o.worn_dates[o.worn_dates.length - 1] : null
+      return !!lastWorn && new Date(lastWorn).getTime() > fourteenDaysAgo
+    })
+    .toArray()
+  const wornSignatures = [...recentlyWorn.map(o => [...o.item_ids].sort().join(',')), rejectedSignature]
+
+  const candidates = generateOutfits(
+    items, outfit.occasion, outfit.season, 10, profile, rules,
+    wornSignatures, undefined, undefined, undefined, personalAdj,
+  )
+
+  await db.outfits.delete(outfitId)
+
+  const replacement = candidates.find(c => [...c.item_ids].sort().join(',') !== rejectedSignature) ?? candidates[0]
+  if (!replacement) return { ok: true, outfit: null }
+
+  const now = new Date().toISOString()
+  const newId = await db.outfits.add({
+    item_ids:        replacement.item_ids,
+    occasion:        replacement.occasion,
+    season:          outfit.season,
+    score_reasons:   replacement.score_reasons,
+    name:            (replacement.notes ?? '').slice(0, 200) || undefined,
+    is_ai_generated: true,
+    is_favourite:    false,
+    times_worn:      0,
+    worn_dates:      [] as string[],
+    score_breakdown: replacement.score_breakdown ?? undefined,
+    score_insight:   replacement.score_insight   ?? undefined,
+    hash:            replacement.hash            ?? undefined,
+    active_styles:   replacement.active_styles   ?? undefined,
+    base_layer_ids:  replacement.base_layer_ids  ?? undefined,
+    created_at:      now,
+  })
+  const saved = (await db.outfits.get(newId))!
+  return { ok: true, outfit: serializeOutfit(saved as Outfit & { id: number }, replacement.score) }
 }
 
 // ─── Profile ──────────────────────────────────────────────────────────────────
@@ -794,6 +868,7 @@ export const api = {
   getOutfitHistory,
   rateOutfit,
   processFeedbackForOutfit,
+  replaceOutfit,
   checkRebalancingStatus,
   runWeeklyRebalancing,
 

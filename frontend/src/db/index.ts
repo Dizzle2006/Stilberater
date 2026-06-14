@@ -9,6 +9,7 @@ export interface FeedbackEntry {
   outfitOccasion?: string
   outfitColors?: string[]
   outfitStyles?: string[]
+  outfitSubcats?: string[]
   timestamp: string
 }
 

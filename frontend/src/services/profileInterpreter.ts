@@ -181,6 +181,7 @@ export interface FeedbackPayload {
   outfitOccasion?: string
   outfitColors?: string[]
   outfitStyles?: string[]
+  outfitSubcats?: string[]
 }
 
 /**
@@ -199,6 +200,7 @@ export function processFeedback(
     outfitOccasion: payload.outfitOccasion,
     outfitColors:   payload.outfitColors,
     outfitStyles:   payload.outfitStyles,
+    outfitSubcats:  payload.outfitSubcats,
     timestamp:      new Date().toISOString(),
   }
   const history = [...(profile.feedback_history ?? []), entry].slice(-30)
